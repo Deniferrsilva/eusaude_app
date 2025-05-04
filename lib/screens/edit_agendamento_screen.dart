@@ -1,27 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import '../services/notification_service.dart'; // ✅ Importação NotificationService
 
-class AddAgendamentoScreen extends StatefulWidget {
-  final int usuarioId;
+class EditAgendamentoScreen extends StatefulWidget {
+  final Map<String, dynamic> agendamento;
 
-  AddAgendamentoScreen({required this.usuarioId});
+  EditAgendamentoScreen({required this.agendamento});
 
   @override
-  _AddAgendamentoScreenState createState() => _AddAgendamentoScreenState();
+  _EditAgendamentoScreenState createState() => _EditAgendamentoScreenState();
 }
 
-class _AddAgendamentoScreenState extends State<AddAgendamentoScreen> {
+class _EditAgendamentoScreenState extends State<EditAgendamentoScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _tipoController = TextEditingController();
-  final _descricaoController = TextEditingController();
-  final _dataController = TextEditingController();
-  final _localController = TextEditingController(); // ✅ novo campo local
+  late TextEditingController _tipoController;
+  late TextEditingController _descricaoController;
+  late TextEditingController _localController;
+  late TextEditingController _dataController;
   DateTime? dataSelecionada;
-  int _antecedenciaMinutos = 60;
   List<String> _sugestoesEndereco = [];
   bool _carregandoSugestoes = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tipoController = TextEditingController(text: widget.agendamento['tipo']);
+    _descricaoController = TextEditingController(text: widget.agendamento['descricao'] ?? '');
+    _localController = TextEditingController(text: widget.agendamento['local'] ?? '');
+    dataSelecionada = DateTime.tryParse(widget.agendamento['data']);
+    _dataController = TextEditingController(
+      text: dataSelecionada != null
+          ? '${dataSelecionada!.day}/${dataSelecionada!.month}/${dataSelecionada!.year} ${dataSelecionada!.hour}:${dataSelecionada!.minute.toString().padLeft(2, '0')}'
+          : '',
+    );
+  }
 
   Future<void> _buscarSugestoesEndereco(String query) async {
     if (query.length < 3) {
@@ -34,7 +46,7 @@ class _AddAgendamentoScreenState extends State<AddAgendamentoScreen> {
     setState(() => _carregandoSugestoes = true);
     final url = Uri.parse('https://nominatim.openstreetmap.org/search?q=$query&format=json&addressdetails=1&limit=5');
     final response = await http.get(url, headers: {'User-Agent': 'eusaude_app'});
-    
+
     if (response.statusCode == 200) {
       final resultados = jsonDecode(response.body) as List;
       setState(() {
@@ -46,70 +58,17 @@ class _AddAgendamentoScreenState extends State<AddAgendamentoScreen> {
     setState(() => _carregandoSugestoes = false);
   }
 
-  Future<void> _salvarAgendamento() async {
-    if (_formKey.currentState!.validate()) {
-      var url = Uri.parse('http://10.0.2.2:8000/cadastrar_agendamento');
-      var response = await http.post(
-            url,
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: {
-              'usuario_id': widget.usuarioId.toString(),
-              'tipo': _tipoController.text,
-              'descricao': _descricaoController.text,
-              'local': _localController.text,
-              'data': dataSelecionada!.toIso8601String(),
-            },
-          );
-
-
-      if (response.statusCode == 200) {
-        final idNotificacao = DateTime.now().millisecondsSinceEpoch.remainder(100000);
-        final agendamentoDate = dataSelecionada!;
-
-        final scheduledNotificationDate = agendamentoDate.subtract(Duration(minutes: _antecedenciaMinutos));
-
-        await NotificationService.scheduleNotification(
-          id: idNotificacao,
-          title: 'Lembrete de Agendamento',
-          body: 'Você tem um agendamento de "${_tipoController.text}" em ${_dataController.text}',
-          scheduledDate: scheduledNotificationDate.isBefore(DateTime.now())
-              ? DateTime.now().add(Duration(seconds: 5))
-              : scheduledNotificationDate,
-        );
-
-        showDialog(
-          context: context,
-          builder: (_) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Row(
-              children: [Icon(Icons.check_circle, color: Colors.green), SizedBox(width: 10), Text('Sucesso')],
-            ),
-            content: Text('Agendamento salvo e notificação programada!'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
-                child: Text('OK'),
-              ),
-            ],
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao salvar agendamento')));
-      }
-    }
-  }
-
   Future<void> _selecionarData() async {
     final DateTime? picked = await showDatePicker(
       context: context,
-      initialDate: DateTime.now(),
+      initialDate: dataSelecionada ?? DateTime.now(),
       firstDate: DateTime(2020),
       lastDate: DateTime(2101),
     );
     if (picked != null) {
       final TimeOfDay? time = await showTimePicker(
         context: context,
-        initialTime: TimeOfDay.now(),
+        initialTime: TimeOfDay.fromDateTime(dataSelecionada ?? DateTime.now()),
       );
       if (time != null) {
         setState(() {
@@ -120,23 +79,59 @@ class _AddAgendamentoScreenState extends State<AddAgendamentoScreen> {
     }
   }
 
+  Future<void> _salvarEdicao() async {
+    if (_formKey.currentState!.validate()) {
+      var url = Uri.parse('http://10.0.2.2:8000/atualizar_agendamento');
+      var response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {
+          'agendamento_id': widget.agendamento['id'].toString(),
+          'tipo': _tipoController.text,
+          'descricao': _descricaoController.text,
+          'local': _localController.text,
+          'data': dataSelecionada!.toIso8601String(),
+        },
+      );
+
+      if (response.statusCode == 200) {
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Row(
+              children: [Icon(Icons.check_circle, color: Colors.green), SizedBox(width: 10), Text('Sucesso')],
+            ),
+            content: Text('Agendamento atualizado com sucesso!'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.popUntil(context, (route) => route.isFirst),
+                child: Text('OK'),
+              ),
+            ],
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao atualizar agendamento')));
+      }
+    }
+  }
+
   @override
   void dispose() {
     _tipoController.dispose();
     _descricaoController.dispose();
-    _dataController.dispose();
     _localController.dispose();
+    _dataController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Novo Agendamento'),
-      ),
+      appBar: AppBar(title: Text('Editar Agendamento')),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Form(
           key: _formKey,
           child: ListView(
@@ -184,27 +179,10 @@ class _AddAgendamentoScreenState extends State<AddAgendamentoScreen> {
                 onTap: _selecionarData,
                 validator: (value) => value == null || value.isEmpty ? 'Selecione a data e hora' : null,
               ),
-              SizedBox(height: 16),
-              DropdownButtonFormField<int>(
-                value: _antecedenciaMinutos,
-                decoration: InputDecoration(labelText: 'Notificar com antecedência'),
-                items: [
-                  DropdownMenuItem(value: 5, child: Text('5 minutos antes')),
-                  DropdownMenuItem(value: 15, child: Text('15 minutos antes')),
-                  DropdownMenuItem(value: 30, child: Text('30 minutos antes')),
-                  DropdownMenuItem(value: 60, child: Text('1 hora antes')),
-                  DropdownMenuItem(value: 1440, child: Text('1 dia antes')),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _antecedenciaMinutos = value!;
-                  });
-                },
-              ),
               SizedBox(height: 24),
               ElevatedButton(
-                onPressed: _salvarAgendamento,
-                child: Text('Salvar'),
+                onPressed: _salvarEdicao,
+                child: Text('Salvar Alterações'),
                 style: ElevatedButton.styleFrom(
                   padding: EdgeInsets.symmetric(vertical: 16),
                   textStyle: TextStyle(fontSize: 18),

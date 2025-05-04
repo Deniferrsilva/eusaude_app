@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
-import 'add_agendamento_screen.dart'; // ✅ ou o caminho correto para seu arquivo
-
+import 'add_agendamento_screen.dart';
+import 'edit_agendamento_screen.dart';
 
 class AgendamentosScreen extends StatefulWidget {
   final int usuarioId;
@@ -26,7 +26,7 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
 
   Future<void> _carregarAgendamentos() async {
     setState(() => isLoading = true);
-    final url = Uri.parse('http://10.0.2.2:8000/listar_agendamentos/${widget.usuarioId}');
+   final url = Uri.parse('http://10.0.2.2:8000/listar_agendamentos/${widget.usuarioId}');
     try {
       final response = await http.get(url);
       if (response.statusCode == 200) {
@@ -70,15 +70,13 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // aplica o filtro
     List<Map<String, dynamic>> agFiltrados = filtroStatus == 'todos'
         ? agendamentos
         : agendamentos.where((ag) => ag['status'] == filtroStatus).toList();
 
-    // agrupa por data
     Map<String, List<Map<String, dynamic>>> agPorData = {};
     for (var ag in agFiltrados) {
-      String dataStr = ag['data']; // espera string no formato yyyy-MM-dd
+      String dataStr = ag['data'].split('T').first; // pegar só a data
       agPorData[dataStr] = (agPorData[dataStr] ?? [])..add(ag);
     }
 
@@ -106,26 +104,22 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
           ? Center(child: CircularProgressIndicator())
           : agPorData.isEmpty
               ? Center(child: Text('Nenhum agendamento encontrado.'))
-              : ListView.builder(
-                  itemCount: agPorData.length,
-                  itemBuilder: (context, index) {
-                    String data = agPorData.keys.toList()[index];
-                    List<Map<String, dynamic>> ags = agPorData[data]!;
-
+              : ListView(
+                  children: agPorData.entries.map((entry) {
+                    String data = entry.key;
+                    List<Map<String, dynamic>> ags = entry.value;
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                           child: Text(
                             _formatarData(data),
-                            style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                         ),
                         ...ags.map((ag) => Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                               child: Slidable(
                                 key: ValueKey(ag['id']),
                                 startActionPane: ActionPane(
@@ -135,7 +129,7 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
                                       onPressed: (_) => _editarAgendamento(ag),
                                       icon: Icons.edit,
                                       label: 'Editar',
-                                      backgroundColor: Colors.blue,
+                                      backgroundColor: Colors.blueAccent,
                                     ),
                                   ],
                                 ),
@@ -143,52 +137,90 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
                                   motion: DrawerMotion(),
                                   children: [
                                     SlidableAction(
-                                      onPressed: (_) =>
-                                          _atualizarStatus(ag['id'], 'cancelado'),
+                                      onPressed: (_) => _atualizarStatus(ag['id'], 'cancelado'),
                                       icon: Icons.cancel,
                                       label: 'Cancelar',
-                                      backgroundColor: Colors.red,
+                                      backgroundColor: Colors.redAccent,
                                     ),
                                   ],
                                 ),
                                 child: Card(
+                                  elevation: 3,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: ListTile(
                                     leading: CircleAvatar(
                                       backgroundColor: _corStatus(ag['status']),
-                                      child: Icon(Icons.event_note, color: Colors.white),
+                                      child: Icon(Icons.event, color: Colors.white),
                                     ),
-                                    title: Text(ag['tipo']),
+                                    title: Text(
+                                      ag['tipo'],
+                                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                    ),
                                     subtitle: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        if (ag['medico'] != null && ag['medico'].isNotEmpty)
-                                          Text('Médico: ${ag['medico']}'),
-                                        Text('Local: ${ag['local']}'),
                                         SizedBox(height: 4),
-                                        Chip(
-                                          label: Text(ag['status'].toUpperCase()),
-                                          backgroundColor: _corStatus(ag['status']).withOpacity(0.2),
+                                        Row(
+                                          children: [
+                                            Icon(Icons.location_on, size: 16, color: Colors.grey),
+                                            SizedBox(width: 4),
+                                            Expanded(
+                                              child: Text(
+                                                ag['local'] ?? 'Local não informado',
+                                                style: TextStyle(color: Colors.grey[700]),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (ag['descricao'] != null && ag['descricao'].isNotEmpty)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 4.0),
+                                            child: Row(
+                                              children: [
+                                                Icon(Icons.description, size: 16, color: Colors.grey),
+                                                SizedBox(width: 4),
+                                                Expanded(
+                                                  child: Text(
+                                                    ag['descricao'],
+                                                    style: TextStyle(color: Colors.grey[700]),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        SizedBox(height: 6),
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: Chip(
+                                            label: Text(
+                                              ag['status'].toUpperCase(),
+                                              style: TextStyle(
+                                                color: _corStatus(ag['status']),
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            backgroundColor: _corStatus(ag['status']).withOpacity(0.1),
+                                          ),
                                         ),
                                       ],
                                     ),
-                                    isThreeLine: true,
                                   ),
                                 ),
                               ),
                             )),
                       ],
                     );
-                  },
+                  }).toList(),
                 ),
-            floatingActionButton: FloatingActionButton(
+      floatingActionButton: FloatingActionButton(
         child: Icon(Icons.add),
         onPressed: () async {
           final result = await Navigator.push(
             context,
-            MaterialPageRoute(builder: (context) => AddAgendamentoScreen(usuarioId: widget.usuarioId)),
+            MaterialPageRoute(
+                builder: (context) => AddAgendamentoScreen(usuarioId: widget.usuarioId)),
           );
           if (result == true) _carregarAgendamentos();
         },
@@ -196,23 +228,15 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
     );
   }
 
-
-  void _editarAgendamento(Map<String, dynamic> agendamento) {
-    // exemplo simples (você pode navegar para uma tela de edição real)
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Editar ${agendamento['tipo']}'),
-        content: Text('Implementar tela de edição.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Fechar'),
-          ),
-        ],
-      ),
-    );
-  }
+void _editarAgendamento(Map<String, dynamic> agendamento) async {
+  final result = await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => EditAgendamentoScreen(agendamento: agendamento),
+    ),
+  );
+  if (result == true) _carregarAgendamentos();
+}
 
   String _formatarData(String data) {
     try {
@@ -236,4 +260,12 @@ class _AgendamentosScreenState extends State<AgendamentosScreen> {
     }
   }
 }
+
+// void _editarAgendamento(Map<String, dynamic> agendamento) async {
+//   final result = await Navigator.push(
+//     context,
+//     MaterialPageRoute(builder: (context) => EditAgendamentoScreen(agendamento: agendamento)),
+//   );
+//   if (result == true) _carregarAgendamentos();
+// }
 
